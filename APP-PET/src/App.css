@@ -1,0 +1,96 @@
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  background-color: #4f9a94;
+}
+
+.container {
+  padding: 16px;
+  padding-bottom: 70px;
+}
+
+.header {
+  text-align: center;
+  font-size: 24px;
+  font-weight: bold;
+  color: white;
+  padding: 16px;
+}
+
+.search {
+  width: 80%;
+  padding: 12px;
+  border-radius: 10px;
+  border: none;
+  margin-bottom: 16px;
+}
+
+.card {
+  background: white;
+  border-radius: 16px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.map {
+  height: 150px;
+  background: #ddd;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pet {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.pet img {
+  width: 80px;
+  height: 80px;
+  border-radius: 12px;
+}
+
+.navbar {
+  position: fixed;
+  bottom: 0;
+  width: 100%;
+  background: white;
+  display: flex;
+  justify-content: space-around;
+  padding: 10px;
+  border-top: 1px solid #ccc;
+}
+
+button {
+  padding: 10px;
+  border: none;
+  background: none;
+  font-size: 16px;
+}
+
+.login-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+  background: #4f9a94;
+}
+
+.login-box {
+  background: white;
+  padding: 20px;
+  border-radius: 12px;
+  text-align: center;
+}
+
+.login-box input {
+  width: 80%;
+  padding: 10px;
+  margin: 10px;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  text-align: center;
+}

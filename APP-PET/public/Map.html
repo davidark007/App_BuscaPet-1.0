@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Rastreador Pet</title>
+  <link rel="stylesheet" href="/vendor/leaflet/leaflet.css">
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#2ecc71">
+  <link rel="apple-touch-icon" href="icone-192.png">
+  <link rel="stylesheet" href="style.css">
+  <script src="/vendor/leaflet/leaflet.js" onerror="window.BUSCAPET_LEAFLET_ERRO = true"></script>
+</head>
+<body>
+  <div id="map"></div>
+  <div id="rotaStatus">Trilha: aguardando GPS do celular</div>
+
+  <div id="bateria">🔋 Bateria: --%</div>
+  <div id="gpsStatus">📡 GPS: --</div>
+
+  <div id="splash">🐶 Localizando seu Pet...</div>
+
+  <script src="script.js"></script>
+  <script>
+    if (window.isSecureContext && "serviceWorker" in navigator) {
+      navigator.serviceWorker.register("service-worker.js")
+        .then(() => console.log("Service Worker registrado"))
+        .catch((err) => console.log("Erro SW:", err));
+    }
+  </script>
+</body>
+</html>

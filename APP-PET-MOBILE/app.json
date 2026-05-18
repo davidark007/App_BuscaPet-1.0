@@ -1,0 +1,39 @@
+{
+  "expo": {
+    "name": "BuscaPet",
+    "slug": "buscapet-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "scheme": "buscapet",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSCameraUsageDescription": "O BuscaPet usa a camera para enviar fotos dos pets.",
+        "NSPhotoLibraryUsageDescription": "O BuscaPet usa suas fotos para cadastrar imagens dos pets.",
+        "NSLocationWhenInUseUsageDescription": "O BuscaPet usa sua localizacao para mostrar onde voce esta e criar uma trilha ate o pet.",
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": true
+        }
+      }
+    },
+    "android": {
+      "usesCleartextTraffic": true,
+      "permissions": [
+        "android.permission.INTERNET",
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.CAMERA",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.READ_EXTERNAL_STORAGE"
+      ]
+    },
+    "web": {
+      "bundler": "metro"
+    }
+  }
+}

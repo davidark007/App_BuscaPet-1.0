@@ -1,0 +1,65 @@
+html,
+body {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    font-family: Arial, sans-serif;
+}
+
+#map {
+    display: none;
+    width: 100%;
+    height: 100dvh;
+    min-height: 320px;
+}
+
+#splash {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: #101918;
+    color: white;
+    text-align: center;
+    font-size: clamp(22px, 7vw, 34px);
+    font-weight: 700;
+}
+
+#bateria,
+#gpsStatus,
+#rotaStatus {
+    position: absolute;
+    left: 12px;
+    z-index: 1000;
+    max-width: calc(100% - 24px);
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: white;
+    font-weight: 700;
+    line-height: 1.2;
+    box-shadow: 0 3px 12px rgba(0, 0, 0, 0.18);
+}
+
+#bateria {
+    bottom: 14px;
+}
+
+#gpsStatus {
+    bottom: 66px;
+}
+
+#rotaStatus {
+    bottom: 118px;
+    background: #12221f;
+    color: #fff;
+}
+
+.leaflet-container {
+    font-family: Arial, sans-serif;
+}
+
+.leaflet-popup-content {
+    font-size: 16px;
+}
