@@ -60,7 +60,11 @@ def garantir_dependencias(pasta):
         return
 
     print(f"Instalando dependencias em {pasta}...")
-    subprocess.run(["npm", "install"], cwd=pasta, check=True)
+    subprocess.run([executavel("npm"), "install"], cwd=pasta, check=True)
+
+
+def executavel(nome):
+    return shutil.which(nome) or nome
 
 
 def comando_cloudflared():
@@ -69,8 +73,10 @@ def comando_cloudflared():
     if instalado:
         return [instalado]
 
-    if shutil.which("npx"):
-        return ["npx", "--yes", "cloudflared"]
+    npx = shutil.which("npx")
+
+    if npx:
+        return [npx, "--yes", "cloudflared"]
 
     raise RuntimeError("Instale Node.js/npm ou cloudflared para criar os tuneis publicos.")
 
@@ -178,7 +184,7 @@ try:
 
     backend_proc = iniciar_processo(
         "backend Node",
-        ["node", "server.js"],
+        [executavel("node"), "server.js"],
         backend,
         env_app
     )
@@ -223,7 +229,7 @@ try:
 
     expo_proc = iniciar_processo(
         "Expo tunnel",
-        ["npm", "run", "start:tunnel"],
+        [executavel("npm"), "run", "start:tunnel"],
         mobile,
         env_mobile
     )
