@@ -5,6 +5,7 @@
   "main": "node_modules/expo/AppEntry.js",
   "scripts": {
     "start": "expo start --host lan",
+    "start:tunnel": "expo start --tunnel",
     "android": "expo start --android --host lan",
     "ios": "expo start --ios --host lan",
     "web": "expo start --web --host lan"
@@ -18,5 +19,7 @@
     "react-native-maps": "1.20.1",
     "react-native-webview": "13.15.0"
   },
-  "devDependencies": {}
+  "devDependencies": {
+    "@expo/ngrok": "^4.1.3"
+  }
 }

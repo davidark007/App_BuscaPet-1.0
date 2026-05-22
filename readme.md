@@ -77,3 +77,19 @@ Se estiver usando Expo Go fora da rede local, tambem pode abrir manualmente:
 ```text
 exp://100.120.203.85:8081
 ```
+
+### Rodar no celular fora da rede local
+
+Use este modo quando o celular estiver no 4G/5G ou em outro Wi-Fi. Ele cria:
+
+- um tunel publico para o backend Node;
+- um tunel publico para o frontend Vite;
+- o Expo em modo tunnel.
+
+Rode na raiz do projeto:
+
+```powershell
+python .\BuscaPet_Start-mobile-online.py
+```
+
+O script mostra as URLs publicas do frontend e do backend e, em seguida, o QR Code do Expo. Deixe a janela aberta enquanto estiver usando o app. Na primeira execucao, o `npx` pode baixar o `cloudflared`, que e usado para criar os tuneis temporarios do Cloudflare.

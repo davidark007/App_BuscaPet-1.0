@@ -23,6 +23,7 @@ export default defineConfig({
   envDir,
   plugins: [react()],
   server: {
+    allowedHosts: ['.trycloudflare.com'],
     host: true,
     port: Number(getEnv('FRONTEND_PORT', '3001')),
     strictPort: true,
