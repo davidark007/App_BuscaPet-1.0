@@ -5,6 +5,7 @@ build/
 .env.local
 .env.*.local
 *.log
+buscapet-online-urls.txt
 __pycache__/
 *.pyc
 

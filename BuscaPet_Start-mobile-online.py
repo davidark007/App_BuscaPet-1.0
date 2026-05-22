@@ -15,6 +15,7 @@ base_dir = os.path.dirname(os.path.abspath(__file__))
 backend = os.path.join(base_dir, "backend")
 frontend = os.path.join(base_dir, "APP-PET")
 mobile = os.path.join(base_dir, "APP-PET-MOBILE")
+urls_file = os.path.join(base_dir, "buscapet-online-urls.txt")
 
 TUNNEL_URL_RE = re.compile(r"https://[-a-zA-Z0-9.]+\.trycloudflare\.com")
 
@@ -84,16 +85,20 @@ def comando_cloudflared():
     raise RuntimeError("Instale Node.js/npm ou cloudflared para criar os tuneis publicos.")
 
 
-def iniciar_processo(nome, comando, cwd, env=None, shell=False):
+def iniciar_processo(nome, comando, cwd, env=None, shell=False, pipe_output=True):
     print(f"Iniciando {nome}...")
+    stdout = subprocess.PIPE if pipe_output else None
+    stderr = subprocess.STDOUT if pipe_output else None
+    stdin = subprocess.DEVNULL if pipe_output else None
+
     processo = subprocess.Popen(
         comando,
         cwd=cwd,
         env=env,
         shell=shell,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        stdin=subprocess.DEVNULL,
+        stdout=stdout,
+        stderr=stderr,
+        stdin=stdin,
         text=True,
         bufsize=1,
         creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
@@ -103,6 +108,9 @@ def iniciar_processo(nome, comando, cwd, env=None, shell=False):
 
 
 def acompanhar_saida(processo, nome, fila=None):
+    if processo.stdout is None:
+        return None
+
     def ler_saida():
         for linha in processo.stdout:
             texto = linha.rstrip()
@@ -178,6 +186,9 @@ try:
     print("Iniciando BuscaPet para celular fora da rede local.")
     print("Este modo usa Cloudflare Tunnel para backend e frontend, e Expo em modo tunnel.")
 
+    if os.path.exists(urls_file):
+        os.remove(urls_file)
+
     garantir_dependencias(frontend)
     garantir_dependencias(mobile)
 
@@ -230,14 +241,18 @@ try:
     print("O Expo Go vai abrir em modo tunnel. Escaneie o QR Code exibido abaixo.")
     print("Deixe esta janela aberta enquanto estiver usando o app.")
 
+    with open(urls_file, "w", encoding="utf-8") as arquivo_urls:
+        arquivo_urls.write(f"Frontend: {frontend_public_url}\n")
+        arquivo_urls.write(f"Backend: {backend_public_url}\n")
+
     expo_proc = iniciar_processo(
         "Expo tunnel",
         [executavel("npm"), "run", "start:tunnel"],
         mobile,
-        env_mobile
+        env_mobile,
+        pipe_output=False
     )
     processos.append(expo_proc)
-    acompanhar_saida(expo_proc, "expo")
 
     while any(processo.poll() is None for processo in processos):
         time.sleep(1)
