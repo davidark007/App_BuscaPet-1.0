@@ -8,6 +8,9 @@ import sys
 import threading
 import time
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(line_buffering=True)
+
 base_dir = os.path.dirname(os.path.abspath(__file__))
 backend = os.path.join(base_dir, "backend")
 frontend = os.path.join(base_dir, "APP-PET")
