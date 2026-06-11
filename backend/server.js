@@ -11,6 +11,7 @@ for (const envPath of [path.resolve(__dirname, "..", ".env"), path.resolve(__dir
 const http = require("http");
 const https = require("https");
 const crypto = require("crypto");
+const nodemailer = require("nodemailer");
 
 const app = express();
 
@@ -190,21 +191,203 @@ app.use("/uploads", express.static("uploads"));
 app.use(express.static("public"));
 
 let ultimaLocalizacao = {
+  id_pet: null,
   latitude: -21.264321,
   longitude: -47.816942,
-  bateria: 100
+  bateria: 100,
+  sinal: null,
+  precisao: null,
+  imei: null,
+  operadora: null,
+  origem: "padrao",
+  criado_em: null
 };
 
-app.post("/localizacao", (req, res) => {
+const DEVICE_LOCATION_TOKEN = process.env.BUSCAPET_DEVICE_TOKEN || process.env.DEVICE_LOCATION_TOKEN || "";
 
-  ultimaLocalizacao = req.body;
+function extrairTokenLocalizacao(req) {
+  const authorization = req.get("authorization") || "";
+  const bearer = authorization.match(/^Bearer\s+(.+)$/i);
 
-  console.log("Nova localização:", ultimaLocalizacao);
+  return (
+    req.get("x-buscapet-token") ||
+    req.get("x-device-token") ||
+    (bearer ? bearer[1] : "") ||
+    req.query.token ||
+    req.body.token ||
+    ""
+  );
+}
 
-  res.send("OK");
+function tokensIguais(tokenRecebido, tokenEsperado) {
+  const recebido = Buffer.from(String(tokenRecebido || ""), "utf8");
+  const esperado = Buffer.from(String(tokenEsperado || ""), "utf8");
+
+  if (recebido.length !== esperado.length || esperado.length === 0) {
+    return false;
+  }
+
+  return crypto.timingSafeEqual(recebido, esperado);
+}
+
+function autenticarDispositivoLocalizacao(req, res, next) {
+  if (!DEVICE_LOCATION_TOKEN) {
+    return res.status(503).json({
+      erro: "BUSCAPET_DEVICE_TOKEN nao configurado no backend"
+    });
+  }
+
+  if (!tokensIguais(extrairTokenLocalizacao(req), DEVICE_LOCATION_TOKEN)) {
+    return res.status(401).json({ erro: "Token do dispositivo invalido" });
+  }
+
+  next();
+}
+
+function numeroOuNull(valor) {
+  if (valor === null || valor === undefined || valor === "") {
+    return null;
+  }
+
+  const numero = Number(valor);
+  return Number.isFinite(numero) ? numero : null;
+}
+
+function inteiroPositivoOuNull(valor) {
+  const numero = numeroOuNull(valor);
+
+  if (numero === null) {
+    return null;
+  }
+
+  const inteiro = Math.trunc(numero);
+  return inteiro > 0 ? inteiro : null;
+}
+
+function normalizarTextoCurto(valor, limite) {
+  if (valor === null || valor === undefined || valor === "") {
+    return null;
+  }
+
+  return String(valor).slice(0, limite);
+}
+
+function normalizarLocalizacaoDispositivo(body) {
+  const latitude = numeroOuNull(body.latitude ?? body.lat);
+  const longitude = numeroOuNull(body.longitude ?? body.lon ?? body.lng);
+  const idPet = inteiroPositivoOuNull(
+    body.id_pet ?? body.pet_id ?? body.idPet ?? process.env.BUSCAPET_DEFAULT_PET_ID
+  );
+
+  if (latitude === null || longitude === null) {
+    throw new Error("Envie latitude e longitude numericas.");
+  }
+
+  if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
+    throw new Error("Coordenadas fora do intervalo valido.");
+  }
+
+  const bateria = numeroOuNull(body.bateria ?? body.battery);
+  const sinal = numeroOuNull(body.sinal ?? body.signal ?? body.rssi);
+  const precisao = numeroOuNull(body.precisao ?? body.accuracy);
+
+  return {
+    id_pet: idPet,
+    latitude,
+    longitude,
+    bateria,
+    sinal,
+    precisao,
+    imei: normalizarTextoCurto(body.imei, 32),
+    operadora: normalizarTextoCurto(body.operadora ?? body.operator, 80),
+    origem: normalizarTextoCurto(body.origem ?? body.source ?? "dispositivo", 40),
+    criado_em: new Date().toISOString()
+  };
+}
+
+app.post("/localizacao", autenticarDispositivoLocalizacao, async (req, res) => {
+  let localizacao;
+
+  try {
+    localizacao = normalizarLocalizacaoDispositivo(req.body || {});
+  } catch (err) {
+    return res.status(400).json({ erro: err.message });
+  }
+
+  try {
+    const idLocalizacao = await salvarHistoricoLocalizacao(localizacao);
+    ultimaLocalizacao = localizacao;
+
+    console.log("Nova localizacao do dispositivo:", ultimaLocalizacao);
+
+    res.json({
+      mensagem: "Localizacao recebida",
+      id_localizacao: idLocalizacao,
+      id_pet: localizacao.id_pet
+    });
+  } catch (err) {
+    console.log("Erro ao salvar localizacao:", err);
+    res.status(500).json({ erro: "Erro ao salvar localizacao" });
+  }
 });
 
-app.get("/localizacao", (req, res) => {
+app.get("/localizacao", async (req, res) => {
+  const idPet = inteiroPositivoOuNull(req.query.id_pet ?? req.query.pet_id ?? req.query.idPet);
+
+  if (!idPet) {
+    return res.json(ultimaLocalizacao);
+  }
+
+  try {
+    const localizacaoPet = await buscarUltimaLocalizacaoDoBanco(idPet);
+    res.json(localizacaoPet || ultimaLocalizacao);
+  } catch (err) {
+    console.log("Erro ao buscar localizacao do pet:", err);
+    res.status(500).json({ erro: "Erro ao buscar localizacao" });
+  }
+});
+
+app.get("/localizacao/historico/:id_pet", async (req, res) => {
+  const idPet = inteiroPositivoOuNull(req.params.id_pet);
+  const limite = Math.min(inteiroPositivoOuNull(req.query.limite) || 50, 200);
+
+  if (!idPet) {
+    return res.status(400).json({ erro: "id_pet invalido" });
+  }
+
+  try {
+    const linhas = await queryDb(`
+      SELECT *
+      FROM localizacao_pet
+      WHERE id_pet = ?
+      ORDER BY criado_em DESC, id_localizacao DESC
+      LIMIT ?
+    `, [idPet, limite]);
+
+    res.json(linhas.map(abrirLocalizacaoDoBanco));
+  } catch (err) {
+    console.log("Erro ao buscar historico de localizacao:", err);
+    res.status(500).json({ erro: "Erro ao buscar historico de localizacao" });
+  }
+});
+
+app.get("/localizacao/:id_pet", async (req, res) => {
+  const idPet = inteiroPositivoOuNull(req.params.id_pet);
+
+  if (!idPet) {
+    return res.status(400).json({ erro: "id_pet invalido" });
+  }
+
+  try {
+    const localizacaoPet = await buscarUltimaLocalizacaoDoBanco(idPet);
+    res.json(localizacaoPet || null);
+  } catch (err) {
+    console.log("Erro ao buscar localizacao do pet:", err);
+    res.status(500).json({ erro: "Erro ao buscar localizacao" });
+  }
+});
+
+app.get("/localizacao-atual", (req, res) => {
   res.json(ultimaLocalizacao);
 });
 
@@ -233,6 +416,101 @@ function queryDb(sql, valores = []) {
       else resolve(result);
     });
   });
+}
+
+function abrirLocalizacaoDoBanco(localizacao) {
+  if (!localizacao) {
+    return null;
+  }
+
+  return {
+    id_localizacao: localizacao.id_localizacao,
+    id_pet: localizacao.id_pet,
+    latitude: Number(localizacao.latitude),
+    longitude: Number(localizacao.longitude),
+    bateria: localizacao.bateria === null ? null : Number(localizacao.bateria),
+    sinal: localizacao.sinal === null ? null : Number(localizacao.sinal),
+    precisao: localizacao.precisao === null ? null : Number(localizacao.precisao),
+    imei: localizacao.imei,
+    operadora: localizacao.operadora,
+    origem: localizacao.origem,
+    criado_em: localizacao.criado_em
+  };
+}
+
+async function garantirSchemaLocalizacaoPet() {
+  await queryDb(`
+    CREATE TABLE IF NOT EXISTS localizacao_pet (
+      id_localizacao BIGINT NOT NULL AUTO_INCREMENT,
+      id_pet INT NULL,
+      latitude DECIMAL(10,7) NOT NULL,
+      longitude DECIMAL(10,7) NOT NULL,
+      bateria DECIMAL(5,2) NULL,
+      sinal INT NULL,
+      precisao DECIMAL(8,2) NULL,
+      imei VARCHAR(32) NULL,
+      operadora VARCHAR(80) NULL,
+      origem VARCHAR(40) NULL DEFAULT 'dispositivo',
+      criado_em TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (id_localizacao),
+      INDEX idx_localizacao_pet_pet_data (id_pet, criado_em),
+      CONSTRAINT fk_localizacao_pet_pet
+        FOREIGN KEY (id_pet) REFERENCES pet(id_pet)
+        ON UPDATE CASCADE
+        ON DELETE SET NULL
+    ) ENGINE=INNODB DEFAULT CHARSET=utf8mb4
+  `);
+}
+
+async function salvarHistoricoLocalizacao(localizacao) {
+  const result = await queryDb(`
+    INSERT INTO localizacao_pet (
+      id_pet,
+      latitude,
+      longitude,
+      bateria,
+      sinal,
+      precisao,
+      imei,
+      operadora,
+      origem
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `, [
+    localizacao.id_pet,
+    localizacao.latitude,
+    localizacao.longitude,
+    localizacao.bateria,
+    localizacao.sinal,
+    localizacao.precisao,
+    localizacao.imei,
+    localizacao.operadora,
+    localizacao.origem
+  ]);
+
+  return result.insertId;
+}
+
+async function buscarUltimaLocalizacaoDoBanco(idPet = null) {
+  const filtroPet = idPet ? "WHERE id_pet = ?" : "";
+  const valores = idPet ? [idPet] : [];
+  const linhas = await queryDb(`
+    SELECT *
+    FROM localizacao_pet
+    ${filtroPet}
+    ORDER BY criado_em DESC, id_localizacao DESC
+    LIMIT 1
+  `, valores);
+
+  return abrirLocalizacaoDoBanco(linhas[0]);
+}
+
+async function carregarUltimaLocalizacaoDoBanco() {
+  const localizacao = await buscarUltimaLocalizacaoDoBanco();
+
+  if (localizacao) {
+    ultimaLocalizacao = localizacao;
+    console.log("Ultima localizacao carregada do banco:", ultimaLocalizacao);
+  }
 }
 
 async function garantirSchemaSegurancaTutor() {
@@ -374,8 +652,10 @@ db.connect(async (err) => {
   try {
     await garantirSchemaSegurancaTutor();
     await garantirSchemaStatusPet();
+    await garantirSchemaLocalizacaoPet();
+    await carregarUltimaLocalizacaoDoBanco();
     await migrarTutorsExistentesParaCriptografia();
-    console.log("Schema de seguranca do tutor e status do pet verificados.");
+    console.log("Schema de seguranca do tutor, status do pet e localizacao verificados.");
   } catch (schemaErr) {
     console.log("Erro ao ajustar schema do banco:", schemaErr);
   }
@@ -546,6 +826,222 @@ async function atualizarSenhaLegadaSeNecessario(usuario, senhaDigitada) {
     }
   });
 }
+
+const recuperacoesSenha = new Map();
+const RECUPERACAO_EMAIL_TTL_MS = 15 * 60 * 1000;
+const RECUPERACAO_CODIGO_TTL_MS = 10 * 60 * 1000;
+const RECUPERACAO_RESET_TTL_MS = 10 * 60 * 1000;
+const RECUPERACAO_MAX_TENTATIVAS = 5;
+
+function normalizarEmail(email = "") {
+  return String(email).trim().toLowerCase();
+}
+
+function mascararEmail(email = "") {
+  const [usuario = "", dominio = ""] = String(email).split("@");
+  const visiveis = Math.min(Math.max(usuario.length - 3, 1), 4);
+  const inicio = usuario.slice(0, visiveis);
+
+  return dominio ? `${inicio}***@${dominio}` : `${inicio}***`;
+}
+
+function criarTokenSeguro(bytes = 32) {
+  return crypto.randomBytes(bytes).toString("hex");
+}
+
+function hashToken(valor) {
+  return crypto.createHash("sha256").update(String(valor)).digest("hex");
+}
+
+function gerarCodigoRecuperacao() {
+  return String(crypto.randomInt(100000, 1000000));
+}
+
+function buscarRecuperacaoValida(idRecuperacao) {
+  const recuperacao = recuperacoesSenha.get(idRecuperacao);
+
+  if (!recuperacao || recuperacao.expiraEm < Date.now()) {
+    recuperacoesSenha.delete(idRecuperacao);
+    return null;
+  }
+
+  return recuperacao;
+}
+
+function criarTransporterEmail() {
+  const host = process.env.SMTP_HOST || process.env.MAIL_HOST;
+
+  if (!host) {
+    return null;
+  }
+
+  const port = Number(process.env.SMTP_PORT || process.env.MAIL_PORT || 587);
+  const user = process.env.SMTP_USER || process.env.MAIL_USER;
+  const pass = process.env.SMTP_PASS || process.env.MAIL_PASS;
+  const secure = String(process.env.SMTP_SECURE || "").toLowerCase() === "true" || port === 465;
+  const config = { host, port, secure };
+
+  if (user || pass) {
+    config.auth = { user, pass };
+  }
+
+  return nodemailer.createTransport(config);
+}
+
+async function enviarCodigoRecuperacao(email, codigo) {
+  const transporter = criarTransporterEmail();
+
+  if (!transporter) {
+    console.log(`[BuscaPet] Codigo de recuperacao para ${email}: ${codigo}`);
+    return { simulado: true };
+  }
+
+  const remetente =
+    process.env.SMTP_FROM ||
+    process.env.MAIL_FROM ||
+    process.env.SMTP_USER ||
+    process.env.MAIL_USER ||
+    "BuscaPet <no-reply@buscapet.local>";
+
+  await transporter.sendMail({
+    from: remetente,
+    to: email,
+    subject: "Codigo de recuperacao BuscaPet",
+    text: `Seu codigo para trocar a senha do BuscaPet e: ${codigo}\n\nEle expira em 10 minutos.`,
+    html: `<p>Seu codigo para trocar a senha do BuscaPet e:</p><h2>${codigo}</h2><p>Ele expira em 10 minutos.</p>`
+  });
+
+  return { simulado: false };
+}
+
+app.post("/senha/esqueci", async (req, res) => {
+  const email = normalizarEmail(req.body.email);
+
+  if (!email) {
+    return res.status(400).json({ erro: "Informe seu email." });
+  }
+
+  try {
+    const usuarios = await queryDb("SELECT id_usuario, email FROM usuario WHERE email = ?", [email]);
+
+    if (usuarios.length === 0) {
+      return res.status(404).json({ erro: "Email nao cadastrado!" });
+    }
+
+    const idRecuperacao = criarTokenSeguro();
+
+    recuperacoesSenha.set(idRecuperacao, {
+      email: normalizarEmail(usuarios[0].email),
+      expiraEm: Date.now() + RECUPERACAO_EMAIL_TTL_MS,
+      codigoHash: null,
+      codigoExpiraEm: null,
+      tentativasCodigo: 0,
+      resetTokenHash: null,
+      resetExpiraEm: null
+    });
+
+    res.json({
+      idRecuperacao,
+      emailMascarado: mascararEmail(usuarios[0].email)
+    });
+  } catch (err) {
+    console.log("Erro ao iniciar recuperacao de senha:", err);
+    res.status(500).json({ erro: "Erro ao iniciar recuperacao de senha." });
+  }
+});
+
+app.post("/senha/confirmar-email", async (req, res) => {
+  const { idRecuperacao } = req.body;
+  const emailConfirmado = normalizarEmail(req.body.email);
+  const recuperacao = buscarRecuperacaoValida(idRecuperacao);
+
+  if (!recuperacao) {
+    return res.status(400).json({ erro: "Pedido expirado. Tente novamente." });
+  }
+
+  if (emailConfirmado !== recuperacao.email) {
+    return res.status(400).json({ erro: "Email confirmado nao bate com a conta." });
+  }
+
+  const codigo = gerarCodigoRecuperacao();
+  recuperacao.codigoHash = hashToken(codigo);
+  recuperacao.codigoExpiraEm = Date.now() + RECUPERACAO_CODIGO_TTL_MS;
+  recuperacao.expiraEm = recuperacao.codigoExpiraEm;
+  recuperacao.tentativasCodigo = 0;
+
+  try {
+    const envio = await enviarCodigoRecuperacao(recuperacao.email, codigo);
+
+    res.json({
+      mensagem: envio.simulado
+        ? "Codigo gerado. Veja o terminal do backend para testar localmente."
+        : "Codigo enviado para seu email."
+    });
+  } catch (err) {
+    console.log("Erro ao enviar codigo de recuperacao:", err);
+    res.status(500).json({ erro: "Erro ao enviar codigo por email." });
+  }
+});
+
+app.post("/senha/validar-codigo", (req, res) => {
+  const { idRecuperacao, codigo } = req.body;
+  const recuperacao = buscarRecuperacaoValida(idRecuperacao);
+
+  if (!recuperacao || !recuperacao.codigoHash) {
+    return res.status(400).json({ erro: "Pedido expirado. Tente novamente." });
+  }
+
+  if (recuperacao.codigoExpiraEm < Date.now()) {
+    recuperacoesSenha.delete(idRecuperacao);
+    return res.status(400).json({ erro: "Codigo expirado. Tente novamente." });
+  }
+
+  if (recuperacao.tentativasCodigo >= RECUPERACAO_MAX_TENTATIVAS) {
+    recuperacoesSenha.delete(idRecuperacao);
+    return res.status(400).json({ erro: "Muitas tentativas. Comece novamente." });
+  }
+
+  if (hashToken(String(codigo || "").trim()) !== recuperacao.codigoHash) {
+    recuperacao.tentativasCodigo += 1;
+    return res.status(400).json({ erro: "Codigo incorreto." });
+  }
+
+  const resetToken = criarTokenSeguro();
+  recuperacao.codigoHash = null;
+  recuperacao.resetTokenHash = hashToken(resetToken);
+  recuperacao.resetExpiraEm = Date.now() + RECUPERACAO_RESET_TTL_MS;
+  recuperacao.expiraEm = recuperacao.resetExpiraEm;
+
+  res.json({ resetToken });
+});
+
+app.post("/senha/redefinir", async (req, res) => {
+  const { idRecuperacao, resetToken, novaSenha } = req.body;
+  const recuperacao = buscarRecuperacaoValida(idRecuperacao);
+
+  if (!recuperacao || !recuperacao.resetTokenHash || recuperacao.resetExpiraEm < Date.now()) {
+    return res.status(400).json({ erro: "Autorizacao expirada. Tente novamente." });
+  }
+
+  if (hashToken(resetToken) !== recuperacao.resetTokenHash) {
+    return res.status(400).json({ erro: "Autorizacao invalida." });
+  }
+
+  if (String(novaSenha || "").length < 6) {
+    return res.status(400).json({ erro: "A nova senha precisa ter pelo menos 6 caracteres." });
+  }
+
+  try {
+    const senhaHash = await bcrypt.hash(String(novaSenha), 12);
+    await queryDb("UPDATE usuario SET senha = ? WHERE email = ?", [senhaHash, recuperacao.email]);
+    recuperacoesSenha.delete(idRecuperacao);
+
+    res.json({ mensagem: "Senha alterada com sucesso!" });
+  } catch (err) {
+    console.log("Erro ao redefinir senha:", err);
+    res.status(500).json({ erro: "Erro ao trocar senha." });
+  }
+});
 
 app.post("/login", (req, res) => {
   const { email, senha } = req.body;

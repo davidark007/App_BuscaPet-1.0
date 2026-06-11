@@ -132,6 +132,7 @@ export default function App() {
   const [nomeUsuario, setNomeUsuario] = useState(() => localStorage.getItem("nome") || "");
   const [page, setPage] = useState("home");
   const [tela, setTela] = useState(() => localStorage.getItem("email") ? "app" : "login");
+  const [loginMensagem, setLoginMensagem] = useState("");
   const [carregandoApp, setCarregandoApp] = useState(true);
   const [progressoCarregamento, setProgressoCarregamento] = useState(0);
 
@@ -161,6 +162,8 @@ export default function App() {
 
   async function fazerLogin() {
     const emailValido = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    setLoginMensagem("");
 
     if (!email || !senha) {
       alert("Preencha todos os campos!");
@@ -205,6 +208,7 @@ export default function App() {
     setSenha("");
     setNomeUsuario("");
     setPage("home");
+    setLoginMensagem("");
     setTela("login");
   }
 
@@ -233,11 +237,24 @@ export default function App() {
           setSenha={setSenha}
           fazerLogin={fazerLogin}
           irParaCadastro={() => setTela("cadastro")}
+          irParaRecuperarSenha={() => setTela("recuperarSenha")}
+          mensagem={loginMensagem}
         />
       )}
 
       {tela === "cadastro" && (
         <Cadastro voltarLogin={() => setTela("login")} />
+      )}
+
+      {tela === "recuperarSenha" && (
+        <RecuperarSenha
+          voltarLogin={() => setTela("login")}
+          onSenhaTrocada={(mensagem) => {
+            setSenha("");
+            setLoginMensagem(mensagem || "Senha alterada com sucesso!");
+            setTela("login");
+          }}
+        />
       )}
     </>
   );
@@ -265,7 +282,7 @@ function TelaCarregamento({ progresso }) {
   );
 }
 
-function Login({ email, senha, setEmail, setSenha, fazerLogin, irParaCadastro }) {
+function Login({ email, senha, setEmail, setSenha, fazerLogin, irParaCadastro, irParaRecuperarSenha, mensagem }) {
   return (
     <div className={`login-container ${tw`relative isolate overflow-hidden px-5`}`}>
       <div className={tw`pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_24%_18%,rgba(244,180,81,0.24),transparent_28rem)]`} />
@@ -279,6 +296,10 @@ function Login({ email, senha, setEmail, setSenha, fazerLogin, irParaCadastro })
             <h2 className={tw`m-0 text-3xl font-black leading-none text-pet-ink`}>BuscaPet</h2>
           </div>
         </div>
+
+        {mensagem && (
+          <p className="login-message">{mensagem}</p>
+        )}
 
         <input
           type="email"
@@ -294,6 +315,10 @@ function Login({ email, senha, setEmail, setSenha, fazerLogin, irParaCadastro })
           onChange={(e) => setSenha(e.target.value)}
         />
 
+        <button className="link-button" type="button" onClick={irParaRecuperarSenha}>
+          Esqueci minha senha
+        </button>
+
         <button className={primaryAction} type="button" onClick={fazerLogin}>
           Entrar
         </button>
@@ -304,6 +329,233 @@ function Login({ email, senha, setEmail, setSenha, fazerLogin, irParaCadastro })
             Cadastre-se
           </span>
         </p>
+      </div>
+    </div>
+  );
+}
+
+function RecuperarSenha({ voltarLogin, onSenhaTrocada }) {
+  const [etapa, setEtapa] = useState("email");
+  const [email, setEmail] = useState("");
+  const [emailConfirmado, setEmailConfirmado] = useState("");
+  const [emailMascarado, setEmailMascarado] = useState("");
+  const [idRecuperacao, setIdRecuperacao] = useState("");
+  const [codigo, setCodigo] = useState("");
+  const [resetToken, setResetToken] = useState("");
+  const [novaSenha, setNovaSenha] = useState("");
+  const [confirmacaoSenha, setConfirmacaoSenha] = useState("");
+  const [aviso, setAviso] = useState("");
+  const [erro, setErro] = useState("");
+  const [carregando, setCarregando] = useState(false);
+  const emailValido = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+  async function enviarRequisicao(caminho, corpo) {
+    const res = await fetch(`${API}${caminho}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(corpo),
+    });
+    const dados = await res.json();
+
+    if (!res.ok) {
+      throw new Error(dados.erro || "Nao foi possivel continuar.");
+    }
+
+    return dados;
+  }
+
+  async function solicitarRecuperacao() {
+    setErro("");
+    setAviso("");
+
+    if (!emailValido.test(email)) {
+      setErro("Digite um email valido.");
+      return;
+    }
+
+    setCarregando(true);
+
+    try {
+      const dados = await enviarRequisicao("/senha/esqueci", { email });
+      setIdRecuperacao(dados.idRecuperacao);
+      setEmailMascarado(dados.emailMascarado);
+      setEmailConfirmado("");
+      setEtapa("confirmar");
+    } catch (err) {
+      setErro(err.message);
+    } finally {
+      setCarregando(false);
+    }
+  }
+
+  async function confirmarEmail() {
+    setErro("");
+    setAviso("");
+
+    if (!emailValido.test(emailConfirmado)) {
+      setErro("Digite o email completo novamente.");
+      return;
+    }
+
+    setCarregando(true);
+
+    try {
+      const dados = await enviarRequisicao("/senha/confirmar-email", {
+        idRecuperacao,
+        email: emailConfirmado,
+      });
+
+      setAviso(dados.mensagem || "Codigo enviado para seu email.");
+      setEtapa("codigo");
+    } catch (err) {
+      setErro(err.message);
+    } finally {
+      setCarregando(false);
+    }
+  }
+
+  async function validarCodigo() {
+    setErro("");
+
+    if (!/^\d{6}$/.test(codigo.trim())) {
+      setErro("Digite o codigo de 6 numeros.");
+      return;
+    }
+
+    setCarregando(true);
+
+    try {
+      const dados = await enviarRequisicao("/senha/validar-codigo", {
+        idRecuperacao,
+        codigo: codigo.trim(),
+      });
+
+      setResetToken(dados.resetToken);
+      setAviso("");
+      setEtapa("senha");
+    } catch (err) {
+      setErro(err.message);
+    } finally {
+      setCarregando(false);
+    }
+  }
+
+  async function redefinirSenha() {
+    setErro("");
+
+    if (novaSenha.length < 6) {
+      setErro("A nova senha precisa ter pelo menos 6 caracteres.");
+      return;
+    }
+
+    if (novaSenha !== confirmacaoSenha) {
+      setErro("As senhas nao conferem.");
+      return;
+    }
+
+    setCarregando(true);
+
+    try {
+      const dados = await enviarRequisicao("/senha/redefinir", {
+        idRecuperacao,
+        resetToken,
+        novaSenha,
+      });
+
+      onSenhaTrocada(dados.mensagem);
+    } catch (err) {
+      setErro(err.message);
+    } finally {
+      setCarregando(false);
+    }
+  }
+
+  return (
+    <div className={`login-container ${tw`relative isolate overflow-hidden px-5`}`}>
+      <div className={tw`pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_24%_18%,rgba(244,180,81,0.24),transparent_28rem)]`} />
+      <div className={`login-box ${tw`relative grid w-full max-w-[430px] gap-4 rounded-[26px] border border-white/80 bg-white/90 p-7 text-left shadow-pet-lift backdrop-blur-2xl sm:p-9`}`}>
+        <div className={tw`mb-1 flex items-center gap-3`}>
+          <span className={tw`grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-2xl bg-white shadow-pet-soft`}>
+            <img src="/chargerIcon.png" alt="Icone do BuscaPet" className={tw`h-full w-full object-cover`} />
+          </span>
+          <div>
+            <p className={tw`m-0 text-sm font-bold uppercase text-pet-muted`}>Recuperar senha</p>
+            <h2 className={tw`m-0 text-3xl font-black leading-none text-pet-ink`}>BuscaPet</h2>
+          </div>
+        </div>
+
+        {etapa === "email" && (
+          <>
+            <p className="login-helper">Digite o email da sua conta.</p>
+            <input
+              type="email"
+              placeholder="Email cadastrado"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+            <button className={primaryAction} type="button" onClick={solicitarRecuperacao} disabled={carregando}>
+              Continuar
+            </button>
+          </>
+        )}
+
+        {etapa === "confirmar" && (
+          <>
+            <p className="login-helper">Confirme o email {emailMascarado}.</p>
+            <input
+              type="email"
+              placeholder="Digite o email completo"
+              value={emailConfirmado}
+              onChange={(e) => setEmailConfirmado(e.target.value)}
+            />
+            <button className={primaryAction} type="button" onClick={confirmarEmail} disabled={carregando}>
+              Enviar codigo
+            </button>
+          </>
+        )}
+
+        {etapa === "codigo" && (
+          <>
+            {aviso && <p className="login-message">{aviso}</p>}
+            <input
+              type="text"
+              inputMode="numeric"
+              maxLength={6}
+              placeholder="Codigo de 6 numeros"
+              value={codigo}
+              onChange={(e) => setCodigo(e.target.value.replace(/\D/g, ""))}
+            />
+            <button className={primaryAction} type="button" onClick={validarCodigo} disabled={carregando}>
+              Confirmar codigo
+            </button>
+          </>
+        )}
+
+        {etapa === "senha" && (
+          <>
+            <input
+              type="password"
+              placeholder="Nova senha"
+              value={novaSenha}
+              onChange={(e) => setNovaSenha(e.target.value)}
+            />
+            <input
+              type="password"
+              placeholder="Confirmar nova senha"
+              value={confirmacaoSenha}
+              onChange={(e) => setConfirmacaoSenha(e.target.value)}
+            />
+            <button className={primaryAction} type="button" onClick={redefinirSenha} disabled={carregando}>
+              Trocar senha
+            </button>
+          </>
+        )}
+
+        {erro && <p className="login-error">{erro}</p>}
+
+        <button className="link-button" type="button" onClick={voltarLogin}>
+          Voltar ao login
+        </button>
       </div>
     </div>
   );

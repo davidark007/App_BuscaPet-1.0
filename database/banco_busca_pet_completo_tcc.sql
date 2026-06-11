@@ -84,6 +84,30 @@ INSERT INTO pet (id_pet, nome, especie, raca, sexo, data_nascimento, cor, peso, 
 (7, 'Ayumy',    'Cachorro', 'SRD',   'Femea', '2024-10-18', 'Branca',   NULL, 0, 4);
 
 -- ============================================================
+-- TABELA: LOCALIZACAO_PET
+-- Historico recebido pelo rastreador ESP32/GPS/SIM800L
+-- ============================================================
+CREATE TABLE localizacao_pet (
+    id_localizacao BIGINT        NOT NULL AUTO_INCREMENT,
+    id_pet         INT           NULL,
+    latitude       DECIMAL(10,7) NOT NULL,
+    longitude      DECIMAL(10,7) NOT NULL,
+    bateria        DECIMAL(5,2)  NULL,
+    sinal          INT           NULL,
+    precisao       DECIMAL(8,2)  NULL,
+    imei           VARCHAR(32)   NULL,
+    operadora      VARCHAR(80)   NULL,
+    origem         VARCHAR(40)   NULL DEFAULT 'dispositivo',
+    criado_em      TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id_localizacao),
+    INDEX idx_localizacao_pet_pet_data (id_pet, criado_em),
+    CONSTRAINT fk_localizacao_pet_pet
+        FOREIGN KEY (id_pet) REFERENCES pet(id_pet)
+        ON UPDATE CASCADE
+        ON DELETE SET NULL
+) ENGINE=INNODB DEFAULT CHARSET=utf8mb4;
+
+-- ============================================================
 -- TABELA: HISTORICO_CLINICO
 -- Relacionamento 1:1 com PET (UNIQUE em id_pet)
 -- ============================================================

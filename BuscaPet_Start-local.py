@@ -4,8 +4,8 @@ import time
 import webbrowser
 import os
 
-backend = r"C:\Users\3dstec2026\Documents\PASTA DAVI - 2 MODULO\App BuscaPet\backend"
-frontend = r"C:\Users\3dstec2026\Documents\PASTA DAVI - 2 MODULO\App BuscaPet\APP-PET"
+backend = r"\PASTA DAVI - 2 MODULO\App BuscaPet\backend"
+frontend = r"\PASTA DAVI - 2 MODULO\App BuscaPet\APP-PET"
 base_dir = os.path.dirname(os.path.abspath(__file__))
 
 def carregar_env(arquivo):

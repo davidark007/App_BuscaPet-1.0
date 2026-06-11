@@ -93,3 +93,42 @@ python .\BuscaPet_Start-mobile-online.py
 ```
 
 O script mostra as URLs publicas do frontend e do backend e, em seguida, o QR Code do Expo. Deixe a janela aberta enquanto estiver usando o app. Na primeira execucao, o `npx` pode baixar o `cloudflared`, que e usado para criar os tuneis temporarios do Cloudflare.
+
+## Integracao com rastreador ESP32/GPS/SIM800L
+
+Configure no `.env` um token para o rastreador:
+
+```env
+BUSCAPET_DEVICE_TOKEN=coloque_um_token_forte_aqui
+BUSCAPET_DEFAULT_PET_ID=1
+```
+
+O dispositivo deve enviar a localizacao para o backend com `POST /localizacao`, usando o header `X-BuscaPet-Token`:
+
+```http
+POST /localizacao HTTP/1.1
+Host: sua-url-do-backend
+Content-Type: application/json
+X-BuscaPet-Token: coloque_um_token_forte_aqui
+
+{
+  "id_pet": 1,
+  "latitude": -21.264321,
+  "longitude": -47.816942,
+  "bateria": 87,
+  "sinal": -72,
+  "precisao": 5.4,
+  "imei": "000000000000000",
+  "operadora": "TIM",
+  "origem": "esp32-sim800l"
+}
+```
+
+O backend salva cada leitura na tabela `localizacao_pet`. Para consultar:
+
+```text
+GET /localizacao
+GET /localizacao?id_pet=1
+GET /localizacao/1
+GET /localizacao/historico/1?limite=50
+```
